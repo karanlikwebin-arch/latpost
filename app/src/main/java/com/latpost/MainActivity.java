@@ -12,6 +12,7 @@ import android.text.InputType;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.ViewOutlineProvider;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.ImageButton;
@@ -110,6 +111,16 @@ public class MainActivity extends Activity {
         ImageButton info = footerButton(com.latpost.R.drawable.ic_info, "Bilgi");
         info.setOnClickListener(v -> showLegal("Bilgi", privacyText() + "\n\n" + termsText()));
         footer.addView(info, new LinearLayout.LayoutParams(0, -2, 1));
+
+        ImageButton settings = footerButton(com.latpost.R.drawable.ic_settings, "Ayarlar");
+        settings.setOnClickListener(v -> {
+            if (prefs.getString("token", null) == null) showLogin(); else showSettings();
+        });
+        footer.addView(settings, new LinearLayout.LayoutParams(0, -2, 1));
+
+        TextView mark = text("Latpost", 12, TEXT_MUTED);
+        mark.setGravity(Gravity.CENTER);
+        footer.addView(mark, new LinearLayout.LayoutParams(0, -2, 1));
         return footer;
     }
 
@@ -261,7 +272,6 @@ public class MainActivity extends Activity {
 
     private void showFeed() {
         base("Latpost");
-        content.addView(text("Guncel haberler", 26, TEXT_DARK));
         feedPage = 1;
         feedHasMore = true;
         feedLoading = false;
@@ -313,7 +323,6 @@ public class MainActivity extends Activity {
         card.setBackgroundColor(Color.WHITE);
         card.setClickable(true);
         card.setFocusable(true);
-        card.setForeground(getDrawable(android.R.drawable.list_selector_background));
         card.setBackground(cardBackground());
         card.setOnClickListener(v -> showPost(post.optInt("PostId", 0)));
         LinearLayout authorRow = new LinearLayout(this);
@@ -362,6 +371,12 @@ public class MainActivity extends Activity {
         image.setLayoutParams(new LinearLayout.LayoutParams(dp(44), dp(44)));
         image.setScaleType(ImageView.ScaleType.CENTER_CROP);
         image.setImageResource(com.latpost.R.drawable.ic_account);
+        image.setClipToOutline(true);
+        image.setOutlineProvider(ViewOutlineProvider.BACKGROUND);
+        GradientDrawable circle = new GradientDrawable();
+        circle.setColor(Color.rgb(235, 241, 250));
+        circle.setShape(GradientDrawable.OVAL);
+        image.setBackground(circle);
         if (url != null && !url.isEmpty()) loadImage(url, image, true);
         return image;
     }
@@ -398,7 +413,6 @@ public class MainActivity extends Activity {
     private GradientDrawable cardBackground() {
         GradientDrawable background = new GradientDrawable();
         background.setColor(Color.WHITE);
-        background.setStroke(dp(1), Color.rgb(231, 235, 241));
         background.setCornerRadius(dp(14));
         return background;
     }
@@ -428,6 +442,47 @@ public class MainActivity extends Activity {
         });
     }
 
+    private void showSettings() {
+        base("Ayarlar");
+        TextView loading = text("Bilgiler yukleniyor...", 16, TEXT_MUTED);
+        content.addView(loading);
+        getAuth("UserProfile.php", response -> {
+            content.removeView(loading);
+            if (isActivation(response)) { showActivation(); return; }
+            if (!isSuccess(response)) { error(response); return; }
+            try {
+                JSONObject user = new JSONObject(response).getJSONObject("data");
+                EditText name = input("Ad soyad", false);
+                EditText mail = input("E-posta", false);
+                EditText avatar = input("Profil resmi URL (opsiyonel)", false);
+                EditText password = input("Yeni sifre (opsiyonel)", true);
+                name.setText(user.optString("NameSurname", ""));
+                mail.setText(user.optString("Mail", ""));
+                avatar.setText(user.optString("UserAvatar", ""));
+                content.addView(name);
+                content.addView(mail);
+                content.addView(avatar);
+                content.addView(password);
+
+                Button save = button("Degisiklikleri kaydet");
+                save.setOnClickListener(v -> {
+                    save.setEnabled(false);
+                    requestAuthFields("UserUpdate.php", responseUpdate -> {
+                        save.setEnabled(true);
+                        if (isSuccess(responseUpdate)) {
+                            toast("Bilgiler guncellendi.");
+                            showProfile();
+                        } else error(responseUpdate);
+                    }, "Action", "update", "NameSurname", value(name), "Mail", value(mail),
+                        "UserAvatar", value(avatar), "Password", value(password));
+                });
+                content.addView(save);
+            } catch (Exception e) {
+                toast("Profil bilgileri okunamadi.");
+            }
+        });
+    }
+
     private void deleteAccount() {
         requestAuth("UserUpdate.php", "Action", "delete", response -> {
             if (isSuccess(response)) clearSession(); else error(response);
@@ -444,6 +499,13 @@ public class MainActivity extends Activity {
     private void requestAuth(String endpoint, String key, String value, Callback callback) {
         executor.execute(() -> {
             String result = post(endpoint, new String[]{key, value}, prefs.getString("token", ""));
+            runOnUiThread(() -> callback.done(result));
+        });
+    }
+
+    private void requestAuthFields(String endpoint, Callback callback, String... fields) {
+        executor.execute(() -> {
+            String result = post(endpoint, fields, prefs.getString("token", ""));
             runOnUiThread(() -> callback.done(result));
         });
     }
@@ -513,7 +575,23 @@ public class MainActivity extends Activity {
     private int dp(int value) { return (int) (value * getResources().getDisplayMetrics().density + 0.5f); }
     private TextView text(String value, int size, int color) { TextView view = new TextView(this); view.setText(value); view.setTextSize(size); view.setTextColor(color); view.setPadding(0, dp(5), 0, dp(5)); return view; }
     private EditText input(String hint, boolean password) { EditText input = new EditText(this); input.setHint(hint); input.setSingleLine(true); if (password) input.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD); input.setLayoutParams(new LinearLayout.LayoutParams(-1, -2)); return input; }
-    private Button button(String value) { Button button = new Button(this); button.setText(value); button.setAllCaps(false); button.setTextColor(BRAND_BLUE); return button; }
+    private Button button(String value) {
+        Button button = new Button(this);
+        button.setText(value);
+        button.setAllCaps(false);
+        button.setTextColor(BRAND_BLUE);
+        button.setMinHeight(dp(48));
+        button.setPadding(dp(16), dp(8), dp(16), dp(8));
+        GradientDrawable background = new GradientDrawable();
+        background.setColor(Color.WHITE);
+        background.setStroke(dp(1), BRAND_BLUE);
+        background.setCornerRadius(dp(10));
+        button.setBackground(background);
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(-1, -2);
+        params.setMargins(0, dp(6), 0, dp(6));
+        button.setLayoutParams(params);
+        return button;
+    }
     private View space(int size) { View view = new View(this); view.setLayoutParams(new LinearLayout.LayoutParams(1, dp(size))); return view; }
     private void toast(String message) { Toast.makeText(this, message, Toast.LENGTH_LONG).show(); }
     private interface Callback { void done(String response); }
