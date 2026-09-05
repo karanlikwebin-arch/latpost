@@ -6,6 +6,7 @@ import android.content.SharedPreferences;
 import android.graphics.Color;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
+import android.graphics.drawable.GradientDrawable;
 import android.os.Bundle;
 import android.text.InputType;
 import android.view.Gravity;
@@ -37,6 +38,9 @@ import java.util.Stack;
 public class MainActivity extends Activity {
     private static final String API = "https://v1-a1.latpost.com/";
     private static final String PREFS = "latpost_session";
+    private static final int BRAND_BLUE = Color.rgb(20, 78, 160);
+    private static final int TEXT_DARK = Color.rgb(24, 37, 56);
+    private static final int TEXT_MUTED = Color.rgb(96, 109, 126);
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
     private SharedPreferences prefs;
     private LinearLayout content;
@@ -62,12 +66,12 @@ public class MainActivity extends Activity {
         }
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
-        root.setBackgroundColor(Color.rgb(247, 249, 248));
+        root.setBackgroundColor(Color.WHITE);
 
         LinearLayout bar = new LinearLayout(this);
         bar.setGravity(Gravity.CENTER_VERTICAL);
         bar.setPadding(dp(20), dp(14), dp(20), dp(14));
-        bar.setBackgroundColor(Color.rgb(11, 110, 79));
+        bar.setBackgroundColor(BRAND_BLUE);
         title = text("Latpost", 22, Color.WHITE);
         bar.addView(title, new LinearLayout.LayoutParams(0, -2, 1));
         root.addView(bar);
@@ -79,7 +83,9 @@ public class MainActivity extends Activity {
         content.setPadding(dp(18), dp(20), dp(18), dp(30));
         scroll.addView(content);
         root.addView(scroll, new LinearLayout.LayoutParams(-1, 0, 1));
-        root.addView(footer(), new LinearLayout.LayoutParams(-1, -2));
+        if (prefs.getString("token", null) != null) {
+            root.addView(footer(), new LinearLayout.LayoutParams(-1, -2));
+        }
         setContentView(root);
     }
 
@@ -87,7 +93,7 @@ public class MainActivity extends Activity {
         LinearLayout footer = new LinearLayout(this);
         footer.setGravity(Gravity.CENTER);
         footer.setBackgroundColor(Color.WHITE);
-        footer.setPadding(dp(6), dp(4), dp(6), dp(4));
+        footer.setPadding(dp(6), dp(3), dp(6), dp(3));
 
         ImageButton home = footerButton(com.latpost.R.drawable.ic_home, "Ana sayfa");
         home.setOnClickListener(v -> {
@@ -123,7 +129,7 @@ public class MainActivity extends Activity {
             showFeed();
             return;
         }
-        content.addView(text("Haberleri sade ve hizli okuyun.", 25, Color.rgb(25, 45, 37)));
+        content.addView(text("Haberleri sade ve hizli okuyun.", 25, TEXT_DARK));
         content.addView(space(14));
         Button login = button("Giris yap");
         login.setOnClickListener(v -> showLogin());
@@ -255,7 +261,7 @@ public class MainActivity extends Activity {
 
     private void showFeed() {
         base("Latpost");
-        content.addView(text("Guncel haberler", 26, Color.rgb(25, 45, 37)));
+        content.addView(text("Guncel haberler", 26, TEXT_DARK));
         feedPage = 1;
         feedHasMore = true;
         feedLoading = false;
@@ -303,23 +309,27 @@ public class MainActivity extends Activity {
     private void addPostCard(JSONObject post) {
         LinearLayout card = new LinearLayout(this);
         card.setOrientation(LinearLayout.VERTICAL);
-        card.setPadding(dp(15), dp(14), dp(15), dp(14));
+        card.setPadding(dp(16), dp(16), dp(16), dp(18));
         card.setBackgroundColor(Color.WHITE);
+        card.setClickable(true);
+        card.setFocusable(true);
+        card.setForeground(getDrawable(android.R.drawable.list_selector_background));
+        card.setBackground(cardBackground());
+        card.setOnClickListener(v -> showPost(post.optInt("PostId", 0)));
         LinearLayout authorRow = new LinearLayout(this);
         authorRow.setGravity(Gravity.CENTER_VERTICAL);
         ImageView avatar = avatar(post.optString("UserAvatar", ""));
         authorRow.addView(avatar);
-        TextView author = text(post.optString("NameSurname", "Latpost"), 14, Color.rgb(11, 110, 79));
+        TextView author = text(post.optString("NameSurname", "Latpost"), 14, BRAND_BLUE);
         authorRow.addView(author);
         card.addView(authorRow);
-        TextView body = text(post.optString("PostContent", ""), 19, Color.rgb(25, 35, 30));
+        TextView body = text(post.optString("PostContent", ""), 18, TEXT_DARK);
         body.setPadding(0, dp(7), 0, dp(8));
         card.addView(body);
         addPictures(card, post.optJSONArray("Pictures"));
-        Button read = button("Haberi oku");
-        read.setOnClickListener(v -> showPost(post.optInt("PostId", 0)));
-        card.addView(read);
-        content.addView(card, new LinearLayout.LayoutParams(-1, -2) {{ setMargins(0, 0, 0, dp(14)); }});
+        LinearLayout.LayoutParams cardParams = new LinearLayout.LayoutParams(-1, -2);
+        cardParams.setMargins(0, 0, 0, dp(14));
+        content.addView(card, cardParams);
     }
 
     private void showPost(int id) {
@@ -335,9 +345,9 @@ public class MainActivity extends Activity {
                 LinearLayout authorRow = new LinearLayout(this);
                 authorRow.setGravity(Gravity.CENTER_VERTICAL);
                 authorRow.addView(avatar(post.optString("UserAvatar", "")));
-                authorRow.addView(text(post.optString("NameSurname", "Latpost"), 15, Color.rgb(11, 110, 79)));
+                authorRow.addView(text(post.optString("NameSurname", "Latpost"), 15, BRAND_BLUE));
                 content.addView(authorRow);
-                content.addView(text(post.optString("PostContent", ""), 23, Color.rgb(25, 35, 30)));
+                content.addView(text(post.optString("PostContent", ""), 23, TEXT_DARK));
                 addPictures(content, post.optJSONArray("Pictures"));
                 content.addView(space(14));
                 Button back = button("Tum haberlere don");
@@ -383,6 +393,14 @@ public class MainActivity extends Activity {
             } catch (Exception ignored) {
             }
         });
+    }
+
+    private GradientDrawable cardBackground() {
+        GradientDrawable background = new GradientDrawable();
+        background.setColor(Color.WHITE);
+        background.setStroke(dp(1), Color.rgb(231, 235, 241));
+        background.setCornerRadius(dp(14));
+        return background;
     }
 
     private void showProfile() {
@@ -495,7 +513,7 @@ public class MainActivity extends Activity {
     private int dp(int value) { return (int) (value * getResources().getDisplayMetrics().density + 0.5f); }
     private TextView text(String value, int size, int color) { TextView view = new TextView(this); view.setText(value); view.setTextSize(size); view.setTextColor(color); view.setPadding(0, dp(5), 0, dp(5)); return view; }
     private EditText input(String hint, boolean password) { EditText input = new EditText(this); input.setHint(hint); input.setSingleLine(true); if (password) input.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD); input.setLayoutParams(new LinearLayout.LayoutParams(-1, -2)); return input; }
-    private Button button(String value) { Button button = new Button(this); button.setText(value); button.setAllCaps(false); return button; }
+    private Button button(String value) { Button button = new Button(this); button.setText(value); button.setAllCaps(false); button.setTextColor(BRAND_BLUE); return button; }
     private View space(int size) { View view = new View(this); view.setLayoutParams(new LinearLayout.LayoutParams(1, dp(size))); return view; }
     private void toast(String message) { Toast.makeText(this, message, Toast.LENGTH_LONG).show(); }
     private interface Callback { void done(String response); }
