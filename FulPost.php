@@ -1,8 +1,13 @@
 <?php
 header('Content-Type: application/json; charset=utf-8');
 require_once 'DbConfig.php';
+require_once 'Auth.php';
 
-$page = isset($_GET['page']) && is_numeric($_GET['page']) ? (int)$_GET['page'] : 1;
+$userId = requireAuthenticatedUser($db);
+
+$pageValue = $_GET['page'] ?? 1;
+$page = is_string($pageValue) && ctype_digit($pageValue) ? (int) $pageValue : 1;
+$page = min(10000, max(1, $page));
 $limit = 10;
 $offset = ($page - 1) * $limit;
 

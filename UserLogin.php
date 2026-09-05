@@ -1,16 +1,17 @@
 <?php
 header('Content-Type: application/json; charset=utf-8');
 require_once 'DbConfig.php';
+require_once 'Auth.php';
 
-$mail = $_POST['Mail'] ?? '';
-$password = $_POST['Password'] ?? '';
+$mail = postString('Mail', 150);
+$password = postString('Password', 4096);
 
-if (empty($mail) || empty($password)) {
+if ($mail === null || $password === null || $mail === '' || $password === '' || !filter_var($mail, FILTER_VALIDATE_EMAIL)) {
     echo json_encode(["status" => "error", "message" => "Mail ve sifre alanlari zorunludur."]);
     exit;
 }
 
-$stmt = $db->prepare("SELECT id, Password FROM User WHERE Mail = ? AND UserDeleted = 0");
+$stmt = $db->prepare("SELECT id, Password FROM User WHERE Mail = ? AND UserDeleted = 0 AND UserActive = 1");
 $stmt->execute([$mail]);
 $user = $stmt->fetch(PDO::FETCH_ASSOC);
 
@@ -22,9 +23,42 @@ if (!$user || !password_verify($password, $user['Password'])) {
 // Token oluşturma
 $userId = $user['id'];
 $userToken = bin2hex(random_bytes(32));
+$tokenHash = hash('sha256', $userToken);
 
-$stmt = $db->prepare("INSERT INTO UserToken (UserId, UserToken) VALUES (?, ?)");
-$tokenResult = $stmt->execute([$userId, $userToken]);
+try {
+    $db->beginTransaction();
+
+    $stmt = $db->prepare("SELECT id FROM User WHERE id = ? AND UserDeleted = 0 AND UserActive = 1 FOR UPDATE");
+    $stmt->execute([$userId]);
+    if (!$stmt->fetch(PDO::FETCH_ASSOC)) {
+        $db->rollBack();
+        echo json_encode(["status" => "error", "message" => "Kullanici bulunamadi."]);
+        exit;
+    }
+
+    $stmt = $db->prepare("SELECT id FROM UserToken WHERE UserId = ? ORDER BY id ASC LIMIT 1");
+    $stmt->execute([$userId]);
+    $existingToken = $stmt->fetch(PDO::FETCH_ASSOC);
+
+    if ($existingToken) {
+        $stmt = $db->prepare("UPDATE UserToken SET UserToken = ? WHERE id = ?");
+        $stmt->execute([$tokenHash, $existingToken['id']]);
+
+        $stmt = $db->prepare("DELETE FROM UserToken WHERE UserId = ? AND id != ?");
+        $stmt->execute([$userId, $existingToken['id']]);
+    } else {
+        $stmt = $db->prepare("INSERT INTO UserToken (UserId, UserToken) VALUES (?, ?)");
+        $stmt->execute([$userId, $tokenHash]);
+    }
+
+    $db->commit();
+    $tokenResult = true;
+} catch (Throwable $exception) {
+    if ($db->inTransaction()) {
+        $db->rollBack();
+    }
+    $tokenResult = false;
+}
 
 if ($tokenResult) {
     echo json_encode([

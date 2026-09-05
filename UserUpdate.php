@@ -1,55 +1,59 @@
 <?php
 header('Content-Type: application/json; charset=utf-8');
 require_once 'DbConfig.php';
+require_once 'Auth.php';
+$userId = requireAuthenticatedUser($db);
+$action = array_key_exists('Action', $_POST) ? postString('Action', 20) : 'update';
 
-// Token doğrulama
-$headers = apache_request_headers();
-$token = $headers['Authorization'] ?? $_POST['Token'] ?? '';
-
-if (empty($token)) {
-    echo json_encode(["status" => "error", "message" => "Oturum token'i gerekli."]);
+if ($action === null) {
+    echo json_encode(["status" => "error", "message" => "Gecersiz islem."]);
     exit;
 }
-
-$stmt = $db->prepare("SELECT UserId FROM UserToken WHERE UserToken = ?");
-$stmt->execute([$token]);
-$tokenData = $stmt->fetch(PDO::FETCH_ASSOC);
-
-if (!$tokenData) {
-    echo json_encode(["status" => "error", "message" => "Gecersiz veya suresi dolmus oturum."]);
-    exit;
-}
-
-$userId = $tokenData['UserId'];
-$action = $_POST['Action'] ?? 'update'; // update, logout, terminate_all, delete
 
 // 1. PROFİL GÜNCELLEME
 if ($action === 'update') {
-    $nameSurname = $_POST['NameSurname'] ?? '';
-    $mail = $_POST['Mail'] ?? '';
-    $avatar = $_POST['UserAvatar'] ?? '';
-    $password = $_POST['Password'] ?? '';
+    $nameSurname = postString('NameSurname', 100);
+    $mail = postString('Mail', 150);
+    $avatarProvided = array_key_exists('UserAvatar', $_POST);
+    $avatar = $avatarProvided ? postString('UserAvatar', 255) : null;
+    $passwordProvided = array_key_exists('Password', $_POST);
+    $password = $passwordProvided ? postString('Password', 4096) : null;
 
-    if (empty($nameSurname) || empty($mail)) {
+    if ($nameSurname === null || $mail === null || ($avatarProvided && $avatar === null) || ($passwordProvided && $password === null) || $nameSurname === '' || $mail === '' || !filter_var($mail, FILTER_VALIDATE_EMAIL)) {
         echo json_encode(["status" => "error", "message" => "Ad soyad ve mail alanlari bos birakilamaz."]);
         exit;
     }
 
     // Mail benzersizlik kontrolü (başka kullanıcıda var mı?)
-    $stmtMail = $db->prepare("SELECT id FROM User WHERE Mail = ? AND id != ?");
+    $stmtMail = $db->prepare("SELECT id FROM User WHERE Mail = ? AND id != ? LIMIT 1");
     $stmtMail->execute([$mail, $userId]);
-    if ($stmtMail->rowCount() > 0) {
+    if ($stmtMail->fetch(PDO::FETCH_ASSOC)) {
         echo json_encode(["status" => "error", "message" => "Bu mail adresi baska bir kullaniciya ait."]);
         exit;
     }
 
-    if (!empty($password)) {
+    try {
+        if ($password !== null && $password !== '') {
         $hashedPassword = password_hash($password, PASSWORD_DEFAULT);
-        $stmt = $db->prepare("UPDATE User SET NameSurname = ?, Mail = ?, UserAvatar = ?, Password = ? WHERE id = ?");
-        $stmt->execute([$nameSurname, $mail, $avatar, $hashedPassword, $userId]);
+        if ($avatar === null) {
+            $stmt = $db->prepare("UPDATE User SET NameSurname = ?, Mail = ?, Password = ? WHERE id = ? AND UserDeleted = 0");
+            $stmt->execute([$nameSurname, $mail, $hashedPassword, $userId]);
+        } else {
+            $stmt = $db->prepare("UPDATE User SET NameSurname = ?, Mail = ?, UserAvatar = ?, Password = ? WHERE id = ? AND UserDeleted = 0");
+            $stmt->execute([$nameSurname, $mail, $avatar, $hashedPassword, $userId]);
+        }
     } else {
-        $stmt = $db->prepare("UPDATE User SET NameSurname = ?, Mail = ?, UserAvatar = ? WHERE id = ?");
-        $stmt->execute([$nameSurname, $mail, $avatar, $userId]);
+        if ($avatar === null) {
+            $stmt = $db->prepare("UPDATE User SET NameSurname = ?, Mail = ? WHERE id = ? AND UserDeleted = 0");
+            $stmt->execute([$nameSurname, $mail, $userId]);
+        } else {
+            $stmt = $db->prepare("UPDATE User SET NameSurname = ?, Mail = ?, UserAvatar = ? WHERE id = ? AND UserDeleted = 0");
+            $stmt->execute([$nameSurname, $mail, $avatar, $userId]);
+        }
+        }
+    } catch (PDOException $exception) {
+        echo json_encode(["status" => "error", "message" => "Profil guncellenemedi."]);
+        exit;
     }
 
     echo json_encode(["status" => "success", "message" => "Profil basariyla guncellendi."]);
@@ -57,8 +61,8 @@ if ($action === 'update') {
 
 // 2. TEKİL OTURUMU SONLANDIRMA (Çıkış Yap)
 else if ($action === 'logout') {
-    $stmt = $db->prepare("DELETE FROM UserToken WHERE UserToken = ?");
-    $stmt->execute([$token]);
+    $stmt = $db->prepare("DELETE FROM UserToken WHERE UserId = ?");
+    $stmt->execute([$userId]);
     echo json_encode(["status" => "success", "message" => "Oturum sonlandirildi."]);
 }
 
@@ -71,13 +75,20 @@ else if ($action === 'terminate_all') {
 
 // 4. HESAP SİLME (Soft Delete)
 else if ($action === 'delete') {
-    // Kullanıcıyı pasife çek
-    $stmtUser = $db->prepare("UPDATE User SET UserDeleted = 1 WHERE id = ?");
-    $stmtUser->execute([$userId]);
-
-    // Aktif token'larını temizle
-    $stmtToken = $db->prepare("DELETE FROM UserToken WHERE UserId = ?");
-    $stmtToken->execute([$userId]);
+    try {
+        $db->beginTransaction();
+        $stmtUser = $db->prepare("UPDATE User SET UserDeleted = 1 WHERE id = ? AND UserDeleted = 0");
+        $stmtUser->execute([$userId]);
+        $stmtToken = $db->prepare("DELETE FROM UserToken WHERE UserId = ?");
+        $stmtToken->execute([$userId]);
+        $db->commit();
+    } catch (Throwable $exception) {
+        if ($db->inTransaction()) {
+            $db->rollBack();
+        }
+        echo json_encode(["status" => "error", "message" => "Hesap silinemedi."]);
+        exit;
+    }
 
     echo json_encode(["status" => "success", "message" => "Hesabiniz basariyla silindi."]);
 } else {

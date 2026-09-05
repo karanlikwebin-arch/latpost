@@ -1,10 +1,13 @@
 <?php
 header('Content-Type: application/json; charset=utf-8');
 require_once 'DbConfig.php';
+require_once 'Auth.php';
+
+$userId = requireAuthenticatedUser($db);
 
 $postId = $_GET['id'] ?? $_POST['id'] ?? '';
 
-if (empty($postId) || !is_numeric($postId)) {
+if (!is_string($postId) || !ctype_digit($postId) || (int) $postId < 1) {
     echo json_encode(["status" => "error", "message" => "Gecerli bir Post ID belirtilmelidir."]);
     exit;
 }
