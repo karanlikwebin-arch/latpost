@@ -4,6 +4,8 @@ import android.app.Activity;
 import android.content.Context;
 import android.content.SharedPreferences;
 import android.graphics.Color;
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
 import android.os.Bundle;
 import android.text.InputType;
 import android.view.Gravity;
@@ -11,6 +13,8 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.widget.Button;
 import android.widget.EditText;
+import android.widget.ImageButton;
+import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
@@ -37,6 +41,10 @@ public class MainActivity extends Activity {
     private SharedPreferences prefs;
     private LinearLayout content;
     private TextView title;
+    private ScrollView feedScroll;
+    private int feedPage = 1;
+    private boolean feedLoading;
+    private boolean feedHasMore = true;
     private final Stack<String> screenHistory = new Stack<>();
     private String currentScreen = "start";
 
@@ -65,6 +73,7 @@ public class MainActivity extends Activity {
         root.addView(bar);
 
         ScrollView scroll = new ScrollView(this);
+        feedScroll = scroll;
         content = new LinearLayout(this);
         content.setOrientation(LinearLayout.VERTICAL);
         content.setPadding(dp(18), dp(20), dp(18), dp(30));
@@ -80,25 +89,30 @@ public class MainActivity extends Activity {
         footer.setBackgroundColor(Color.WHITE);
         footer.setPadding(dp(6), dp(4), dp(6), dp(4));
 
-        Button home = footerButton("Ana sayfa");
-        home.setOnClickListener(v -> showFeed());
+        ImageButton home = footerButton(com.latpost.R.drawable.ic_home, "Ana sayfa");
+        home.setOnClickListener(v -> {
+            if (prefs.getString("token", null) == null) showStart(); else showFeed();
+        });
         footer.addView(home, new LinearLayout.LayoutParams(0, -2, 1));
 
-        Button account = footerButton("Hesap");
+        ImageButton account = footerButton(com.latpost.R.drawable.ic_account, "Hesap");
         account.setOnClickListener(v -> {
             if (prefs.getString("token", null) == null) showLogin(); else showProfile();
         });
         footer.addView(account, new LinearLayout.LayoutParams(0, -2, 1));
 
-        Button info = footerButton("Bilgi");
+        ImageButton info = footerButton(com.latpost.R.drawable.ic_info, "Bilgi");
         info.setOnClickListener(v -> showLegal("Bilgi", privacyText() + "\n\n" + termsText()));
         footer.addView(info, new LinearLayout.LayoutParams(0, -2, 1));
         return footer;
     }
 
-    private Button footerButton(String value) {
-        Button button = button(value);
-        button.setTextSize(12);
+    private ImageButton footerButton(int icon, String description) {
+        ImageButton button = new ImageButton(this);
+        button.setImageResource(icon);
+        button.setContentDescription(description);
+        button.setBackgroundColor(Color.TRANSPARENT);
+        button.setPadding(dp(16), dp(10), dp(16), dp(10));
         return button;
     }
 
@@ -242,9 +256,26 @@ public class MainActivity extends Activity {
     private void showFeed() {
         base("Latpost");
         content.addView(text("Guncel haberler", 26, Color.rgb(25, 45, 37)));
-        TextView loading = text("Haberler yukleniyor...", 16, Color.GRAY);
+        feedPage = 1;
+        feedHasMore = true;
+        feedLoading = false;
+        loadFeedPage(true);
+        feedScroll.setOnScrollChangeListener((v, scrollX, scrollY, oldScrollX, oldScrollY) -> {
+            View child = feedScroll.getChildAt(0);
+            if (child != null && child.getBottom() - (scrollY + feedScroll.getHeight()) < dp(500)) {
+                loadFeedPage(false);
+            }
+        });
+    }
+
+    private void loadFeedPage(boolean firstPage) {
+        if (feedLoading || !feedHasMore) return;
+        feedLoading = true;
+        int requestedPage = feedPage;
+        TextView loading = text(firstPage ? "Haberler yukleniyor..." : "Daha fazla haber yukleniyor...", 15, Color.GRAY);
         content.addView(loading);
-        getAuth("FulPost.php?page=1", response -> {
+        getAuth("FulPost.php?page=" + requestedPage, response -> {
+            feedLoading = false;
             content.removeView(loading);
             if (isActivation(response)) {
                 showActivation();
@@ -257,10 +288,12 @@ public class MainActivity extends Activity {
             try {
                 JSONArray posts = new JSONObject(response).optJSONArray("data");
                 if (posts == null || posts.length() == 0) {
-                    content.addView(text("Henuz haber yok.", 17, Color.GRAY));
+                    feedHasMore = false;
+                    if (firstPage) content.addView(text("Henuz haber yok.", 17, Color.GRAY));
                     return;
                 }
                 for (int i = 0; i < posts.length(); i++) addPostCard(posts.getJSONObject(i));
+                feedPage++;
             } catch (Exception e) {
                 toast("Haberler okunamadi.");
             }
@@ -272,11 +305,17 @@ public class MainActivity extends Activity {
         card.setOrientation(LinearLayout.VERTICAL);
         card.setPadding(dp(15), dp(14), dp(15), dp(14));
         card.setBackgroundColor(Color.WHITE);
-        TextView author = text(post.optString("NameSurname", "Latpost"), 13, Color.rgb(11, 110, 79));
+        LinearLayout authorRow = new LinearLayout(this);
+        authorRow.setGravity(Gravity.CENTER_VERTICAL);
+        ImageView avatar = avatar(post.optString("UserAvatar", ""));
+        authorRow.addView(avatar);
+        TextView author = text(post.optString("NameSurname", "Latpost"), 14, Color.rgb(11, 110, 79));
+        authorRow.addView(author);
+        card.addView(authorRow);
         TextView body = text(post.optString("PostContent", ""), 19, Color.rgb(25, 35, 30));
         body.setPadding(0, dp(7), 0, dp(8));
-        card.addView(author);
         card.addView(body);
+        addPictures(card, post.optJSONArray("Pictures"));
         Button read = button("Haberi oku");
         read.setOnClickListener(v -> showPost(post.optInt("PostId", 0)));
         card.addView(read);
@@ -293,13 +332,56 @@ public class MainActivity extends Activity {
             if (!isSuccess(response)) { error(response); return; }
             try {
                 JSONObject post = new JSONObject(response).getJSONObject("data");
-                content.addView(text(post.optString("NameSurname", "Latpost"), 14, Color.rgb(11, 110, 79)));
+                LinearLayout authorRow = new LinearLayout(this);
+                authorRow.setGravity(Gravity.CENTER_VERTICAL);
+                authorRow.addView(avatar(post.optString("UserAvatar", "")));
+                authorRow.addView(text(post.optString("NameSurname", "Latpost"), 15, Color.rgb(11, 110, 79)));
+                content.addView(authorRow);
                 content.addView(text(post.optString("PostContent", ""), 23, Color.rgb(25, 35, 30)));
+                addPictures(content, post.optJSONArray("Pictures"));
                 content.addView(space(14));
                 Button back = button("Tum haberlere don");
                 back.setOnClickListener(v -> showFeed());
                 content.addView(back);
             } catch (Exception e) { toast("Haber okunamadi."); }
+        });
+    }
+
+    private ImageView avatar(String url) {
+        ImageView image = new ImageView(this);
+        image.setLayoutParams(new LinearLayout.LayoutParams(dp(44), dp(44)));
+        image.setScaleType(ImageView.ScaleType.CENTER_CROP);
+        image.setImageResource(com.latpost.R.drawable.ic_account);
+        if (url != null && !url.isEmpty()) loadImage(url, image, true);
+        return image;
+    }
+
+    private void addPictures(LinearLayout parent, JSONArray pictures) {
+        if (pictures == null) return;
+        for (int i = 0; i < pictures.length(); i++) {
+            String url = pictures.optString(i, "");
+            if (url.isEmpty()) continue;
+            ImageView image = new ImageView(this);
+            image.setAdjustViewBounds(true);
+            image.setMinimumHeight(dp(120));
+            image.setScaleType(ImageView.ScaleType.CENTER_CROP);
+            image.setImageResource(com.latpost.R.drawable.ic_image_placeholder);
+            parent.addView(image, new LinearLayout.LayoutParams(-1, -2));
+            loadImage(url, image, false);
+        }
+    }
+
+    private void loadImage(String url, ImageView target, boolean small) {
+        executor.execute(() -> {
+            try {
+                HttpURLConnection connection = (HttpURLConnection) new URL(url).openConnection();
+                connection.setConnectTimeout(8000);
+                connection.setReadTimeout(12000);
+                Bitmap bitmap = BitmapFactory.decodeStream(connection.getInputStream());
+                connection.disconnect();
+                if (bitmap != null) runOnUiThread(() -> target.setImageBitmap(bitmap));
+            } catch (Exception ignored) {
+            }
         });
     }
 
