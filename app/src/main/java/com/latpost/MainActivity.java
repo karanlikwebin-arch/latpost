@@ -74,6 +74,21 @@ public class MainActivity extends Activity {
         setContentView(splash);
     }
 
+    private void showLoadingScreen() {
+        LinearLayout loading = new LinearLayout(this);
+        loading.setOrientation(LinearLayout.VERTICAL);
+        loading.setGravity(Gravity.CENTER);
+        loading.setBackgroundColor(Color.WHITE);
+        ImageView logo = new ImageView(this);
+        logo.setImageResource(com.latpost.R.drawable.mobile);
+        logo.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
+        loading.addView(logo, new LinearLayout.LayoutParams(-1, dp(180)));
+        TextView message = text("Lutfen bekleyin, islem suruyor.", 16, TEXT_MUTED);
+        message.setGravity(Gravity.CENTER);
+        loading.addView(message);
+        setContentView(loading);
+    }
+
     private void base(String screenTitle) {
         if (!screenTitle.equals(currentScreen)) {
             screenHistory.push(currentScreen);
@@ -144,12 +159,12 @@ public class MainActivity extends Activity {
     }
 
     private void showStart() {
-        base("Latpost");
         String token = prefs.getString("token", null);
         if (token != null) {
             showFeed();
             return;
         }
+        base("Latpost");
         content.addView(text("Haberleri sade ve hizli okuyun.", 25, TEXT_DARK));
         content.addView(space(14));
         Button login = button("Giris yap");
@@ -281,11 +296,18 @@ public class MainActivity extends Activity {
     }
 
     private void showFeed() {
-        base("Latpost");
+        showLoadingScreen();
         feedPage = 1;
         feedHasMore = true;
         feedLoading = false;
-        loadFeedPage(true);
+        getAuth("FulPost.php?page=1", response -> {
+            setupFeedFrame();
+            renderFeedResponse(response, true, null);
+        });
+    }
+
+    private void setupFeedFrame() {
+        base("Latpost");
         feedScroll.setOnScrollChangeListener((v, scrollX, scrollY, oldScrollX, oldScrollY) -> {
             View child = feedScroll.getChildAt(0);
             if (child != null && child.getBottom() - (scrollY + feedScroll.getHeight()) < dp(500)) {
@@ -301,29 +323,33 @@ public class MainActivity extends Activity {
         TextView loading = text(firstPage ? "Haberler yukleniyor..." : "Daha fazla haber yukleniyor...", 15, Color.GRAY);
         content.addView(loading);
         getAuth("FulPost.php?page=" + requestedPage, response -> {
-            feedLoading = false;
-            content.removeView(loading);
-            if (isActivation(response)) {
-                showActivation();
-                return;
-            }
-            if (!isSuccess(response)) {
-                error(response);
-                return;
-            }
-            try {
-                JSONArray posts = new JSONObject(response).optJSONArray("data");
-                if (posts == null || posts.length() == 0) {
-                    feedHasMore = false;
-                    if (firstPage) content.addView(text("Henuz haber yok.", 17, Color.GRAY));
-                    return;
-                }
-                for (int i = 0; i < posts.length(); i++) addPostCard(posts.getJSONObject(i));
-                feedPage++;
-            } catch (Exception e) {
-                toast("Haberler okunamadi.");
-            }
+            renderFeedResponse(response, firstPage, loading);
         });
+    }
+
+    private void renderFeedResponse(String response, boolean firstPage, View loading) {
+        feedLoading = false;
+        if (loading != null) content.removeView(loading);
+        if (isActivation(response)) {
+            showActivation();
+            return;
+        }
+        if (!isSuccess(response)) {
+            error(response);
+            return;
+        }
+        try {
+            JSONArray posts = new JSONObject(response).optJSONArray("data");
+            if (posts == null || posts.length() == 0) {
+                feedHasMore = false;
+                if (firstPage) content.addView(text("Henuz haber yok.", 17, TEXT_MUTED));
+                return;
+            }
+            for (int i = 0; i < posts.length(); i++) addPostCard(posts.getJSONObject(i));
+            feedPage++;
+        } catch (Exception e) {
+            toast("Haberler okunamadi.");
+        }
     }
 
     private void addPostCard(JSONObject post) {
@@ -339,7 +365,7 @@ public class MainActivity extends Activity {
         authorRow.setGravity(Gravity.CENTER_VERTICAL);
         ImageView avatar = avatar(post.optString("UserAvatar", ""));
         authorRow.addView(avatar);
-        TextView author = text(post.optString("NameSurname", "Latpost") + " #0000", 16, BRAND_BLUE);
+        TextView author = text(post.optString("NameSurname", "Latpost"), 16, BRAND_BLUE);
         authorRow.addView(author);
         card.addView(authorRow);
         TextView body = text(post.optString("PostContent", ""), 18, TEXT_DARK);
@@ -352,11 +378,9 @@ public class MainActivity extends Activity {
     }
 
     private void showPost(int id) {
-        base("Haber");
-        TextView loading = text("Haber yukleniyor...", 16, Color.GRAY);
-        content.addView(loading);
+        showLoadingScreen();
         getAuth("GetPost.php?id=" + id, response -> {
-            content.removeView(loading);
+            base("Haber");
             if (isActivation(response)) { showActivation(); return; }
             if (!isSuccess(response)) { error(response); return; }
             try {
@@ -364,7 +388,7 @@ public class MainActivity extends Activity {
                 LinearLayout authorRow = new LinearLayout(this);
                 authorRow.setGravity(Gravity.CENTER_VERTICAL);
                 authorRow.addView(avatar(post.optString("UserAvatar", "")));
-                authorRow.addView(text(post.optString("NameSurname", "Latpost") + " #0000", 17, BRAND_BLUE));
+                authorRow.addView(text(post.optString("NameSurname", "Latpost"), 17, BRAND_BLUE));
                 content.addView(authorRow);
                 content.addView(text(post.optString("PostContent", ""), 22, TEXT_DARK));
                 addPictures(content, post.optJSONArray("Pictures"));
@@ -424,11 +448,9 @@ public class MainActivity extends Activity {
     }
 
     private void showProfile() {
-        base("Profil");
-        TextView loading = text("Profil yukleniyor...", 16, Color.GRAY);
-        content.addView(loading);
+        showLoadingScreen();
         getAuth("UserProfile.php", response -> {
-            content.removeView(loading);
+            base("Profil");
             if (isActivation(response)) { showActivation(); return; }
             if (!isSuccess(response)) { error(response); return; }
             try {
@@ -449,11 +471,9 @@ public class MainActivity extends Activity {
     }
 
     private void showSettings() {
-        base("Ayarlar");
-        TextView loading = text("Bilgiler yukleniyor...", 16, TEXT_MUTED);
-        content.addView(loading);
+        showLoadingScreen();
         getAuth("UserProfile.php", response -> {
-            content.removeView(loading);
+            base("Ayarlar");
             if (isActivation(response)) { showActivation(); return; }
             if (!isSuccess(response)) { error(response); return; }
             try {
