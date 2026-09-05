@@ -8,6 +8,8 @@ import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.graphics.drawable.GradientDrawable;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
 import android.text.InputType;
 import android.view.Gravity;
 import android.view.View;
@@ -57,7 +59,19 @@ public class MainActivity extends Activity {
     protected void onCreate(Bundle state) {
         super.onCreate(state);
         prefs = getSharedPreferences(PREFS, MODE_PRIVATE);
-        showStart();
+        showSplash();
+        new Handler(Looper.getMainLooper()).postDelayed(this::showStart, 550);
+    }
+
+    private void showSplash() {
+        LinearLayout splash = new LinearLayout(this);
+        splash.setGravity(Gravity.CENTER);
+        splash.setBackgroundColor(Color.WHITE);
+        ImageView logo = new ImageView(this);
+        logo.setImageResource(com.latpost.R.drawable.mobile);
+        logo.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
+        splash.addView(logo, new LinearLayout.LayoutParams(-1, -1));
+        setContentView(splash);
     }
 
     private void base(String screenTitle) {
@@ -102,7 +116,13 @@ public class MainActivity extends Activity {
         });
         footer.addView(home, new LinearLayout.LayoutParams(0, -2, 1));
 
-        ImageButton account = footerButton(com.latpost.R.drawable.ic_account, "Hesap");
+        ImageButton settings = footerButton(com.latpost.R.drawable.ic_settings, "Ayarlar");
+        settings.setOnClickListener(v -> {
+            if (prefs.getString("token", null) == null) showLogin(); else showSettings();
+        });
+        footer.addView(settings, new LinearLayout.LayoutParams(0, -2, 1));
+
+        ImageButton account = footerButton(com.latpost.R.drawable.ic_account, "Profil bilgileri");
         account.setOnClickListener(v -> {
             if (prefs.getString("token", null) == null) showLogin(); else showProfile();
         });
@@ -111,16 +131,6 @@ public class MainActivity extends Activity {
         ImageButton info = footerButton(com.latpost.R.drawable.ic_info, "Bilgi");
         info.setOnClickListener(v -> showLegal("Bilgi", privacyText() + "\n\n" + termsText()));
         footer.addView(info, new LinearLayout.LayoutParams(0, -2, 1));
-
-        ImageButton settings = footerButton(com.latpost.R.drawable.ic_settings, "Ayarlar");
-        settings.setOnClickListener(v -> {
-            if (prefs.getString("token", null) == null) showLogin(); else showSettings();
-        });
-        footer.addView(settings, new LinearLayout.LayoutParams(0, -2, 1));
-
-        TextView mark = text("Latpost", 12, TEXT_MUTED);
-        mark.setGravity(Gravity.CENTER);
-        footer.addView(mark, new LinearLayout.LayoutParams(0, -2, 1));
         return footer;
     }
 
@@ -319,7 +329,7 @@ public class MainActivity extends Activity {
     private void addPostCard(JSONObject post) {
         LinearLayout card = new LinearLayout(this);
         card.setOrientation(LinearLayout.VERTICAL);
-        card.setPadding(dp(16), dp(16), dp(16), dp(18));
+        card.setPadding(dp(12), dp(10), dp(12), dp(12));
         card.setBackgroundColor(Color.WHITE);
         card.setClickable(true);
         card.setFocusable(true);
@@ -329,7 +339,7 @@ public class MainActivity extends Activity {
         authorRow.setGravity(Gravity.CENTER_VERTICAL);
         ImageView avatar = avatar(post.optString("UserAvatar", ""));
         authorRow.addView(avatar);
-        TextView author = text(post.optString("NameSurname", "Latpost"), 14, BRAND_BLUE);
+        TextView author = text(post.optString("NameSurname", "Latpost") + " #0000", 16, BRAND_BLUE);
         authorRow.addView(author);
         card.addView(authorRow);
         TextView body = text(post.optString("PostContent", ""), 18, TEXT_DARK);
@@ -337,7 +347,7 @@ public class MainActivity extends Activity {
         card.addView(body);
         addPictures(card, post.optJSONArray("Pictures"));
         LinearLayout.LayoutParams cardParams = new LinearLayout.LayoutParams(-1, -2);
-        cardParams.setMargins(0, 0, 0, dp(14));
+        cardParams.setMargins(0, 0, 0, dp(8));
         content.addView(card, cardParams);
     }
 
@@ -354,14 +364,10 @@ public class MainActivity extends Activity {
                 LinearLayout authorRow = new LinearLayout(this);
                 authorRow.setGravity(Gravity.CENTER_VERTICAL);
                 authorRow.addView(avatar(post.optString("UserAvatar", "")));
-                authorRow.addView(text(post.optString("NameSurname", "Latpost"), 15, BRAND_BLUE));
+                authorRow.addView(text(post.optString("NameSurname", "Latpost") + " #0000", 17, BRAND_BLUE));
                 content.addView(authorRow);
-                content.addView(text(post.optString("PostContent", ""), 23, TEXT_DARK));
+                content.addView(text(post.optString("PostContent", ""), 22, TEXT_DARK));
                 addPictures(content, post.optJSONArray("Pictures"));
-                content.addView(space(14));
-                Button back = button("Tum haberlere don");
-                back.setOnClickListener(v -> showFeed());
-                content.addView(back);
             } catch (Exception e) { toast("Haber okunamadi."); }
         });
     }
@@ -413,7 +419,7 @@ public class MainActivity extends Activity {
     private GradientDrawable cardBackground() {
         GradientDrawable background = new GradientDrawable();
         background.setColor(Color.WHITE);
-        background.setCornerRadius(dp(14));
+        background.setCornerRadius(dp(10));
         return background;
     }
 
@@ -454,14 +460,11 @@ public class MainActivity extends Activity {
                 JSONObject user = new JSONObject(response).getJSONObject("data");
                 EditText name = input("Ad soyad", false);
                 EditText mail = input("E-posta", false);
-                EditText avatar = input("Profil resmi URL (opsiyonel)", false);
                 EditText password = input("Yeni sifre (opsiyonel)", true);
                 name.setText(user.optString("NameSurname", ""));
                 mail.setText(user.optString("Mail", ""));
-                avatar.setText(user.optString("UserAvatar", ""));
                 content.addView(name);
                 content.addView(mail);
-                content.addView(avatar);
                 content.addView(password);
 
                 Button save = button("Degisiklikleri kaydet");
@@ -474,7 +477,7 @@ public class MainActivity extends Activity {
                             showProfile();
                         } else error(responseUpdate);
                     }, "Action", "update", "NameSurname", value(name), "Mail", value(mail),
-                        "UserAvatar", value(avatar), "Password", value(password));
+                        "Password", value(password));
                 });
                 content.addView(save);
             } catch (Exception e) {
