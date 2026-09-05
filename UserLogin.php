@@ -11,7 +11,7 @@ if ($mail === null || $password === null || $mail === '' || $password === '' || 
     exit;
 }
 
-$stmt = $db->prepare("SELECT id, Password FROM User WHERE Mail = ? AND UserDeleted = 0 AND UserActive = 1");
+$stmt = $db->prepare("SELECT id, Password, UserActive FROM User WHERE Mail = ? AND UserDeleted = 0");
 $stmt->execute([$mail]);
 $user = $stmt->fetch(PDO::FETCH_ASSOC);
 
@@ -28,7 +28,7 @@ $tokenHash = hash('sha256', $userToken);
 try {
     $db->beginTransaction();
 
-    $stmt = $db->prepare("SELECT id FROM User WHERE id = ? AND UserDeleted = 0 AND UserActive = 1 FOR UPDATE");
+    $stmt = $db->prepare("SELECT id FROM User WHERE id = ? AND UserDeleted = 0 FOR UPDATE");
     $stmt->execute([$userId]);
     if (!$stmt->fetch(PDO::FETCH_ASSOC)) {
         $db->rollBack();
@@ -61,6 +61,15 @@ try {
 }
 
 if ($tokenResult) {
+    if ((int) $user['UserActive'] !== 1) {
+        echo json_encode([
+            "status" => "activation_required",
+            "message" => "Hesabinizi kullanmak icin once OTP kodu ile aktif etmelisiniz.",
+            "token" => $userToken
+        ]);
+        exit;
+    }
+
     echo json_encode([
         "status" => "success",
         "message" => "Giris basarili.",

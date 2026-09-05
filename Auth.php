@@ -30,7 +30,7 @@ function requestToken(): ?string
         : null;
 }
 
-function requireAuthenticatedUser(PDO $db): int
+function requireAuthenticatedUser(PDO $db, bool $requireActive = true): int
 {
     $token = requestToken();
 
@@ -41,10 +41,10 @@ function requireAuthenticatedUser(PDO $db): int
 
     $tokenHash = hash('sha256', $token);
     $stmt = $db->prepare(
-        'SELECT t.id, t.UserId, t.UserToken
+        'SELECT t.id, t.UserId, t.UserToken, u.UserActive
          FROM UserToken t
          INNER JOIN User u ON u.id = t.UserId
-         WHERE t.UserToken IN (?, ?) AND u.UserDeleted = 0 AND u.UserActive = 1
+         WHERE t.UserToken IN (?, ?) AND u.UserDeleted = 0
          LIMIT 1'
     );
     $stmt->execute([$tokenHash, $token]);
@@ -52,6 +52,14 @@ function requireAuthenticatedUser(PDO $db): int
 
     if (!$tokenData) {
         echo json_encode(["status" => "error", "message" => "Gecersiz token."]);
+        exit;
+    }
+
+    if ($requireActive && (int) $tokenData['UserActive'] !== 1) {
+        echo json_encode([
+            "status" => "activation_required",
+            "message" => "Hesabinizi kullanmak icin once OTP kodu ile aktif etmelisiniz."
+        ]);
         exit;
     }
 

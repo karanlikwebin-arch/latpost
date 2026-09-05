@@ -22,6 +22,8 @@ if ($stmt->fetch(PDO::FETCH_ASSOC)) {
 }
 
 $hashedPassword = password_hash($password, PASSWORD_DEFAULT);
+$userToken = bin2hex(random_bytes(32));
+$tokenHash = hash('sha256', $userToken);
 
 try {
     $db->beginTransaction();
@@ -39,6 +41,9 @@ try {
     $stmt = $db->prepare("INSERT INTO UserOtp (UserId, OtpCode) VALUES (?, ?)");
     $stmt->execute([$userId, $otpCode]);
 
+    $stmt = $db->prepare("INSERT INTO UserToken (UserId, UserToken) VALUES (?, ?)");
+    $stmt->execute([$userId, $tokenHash]);
+
     sendOtpWithResend($mail, $otpCode);
     $db->commit();
     $result = true;
@@ -50,7 +55,11 @@ try {
 }
 
 if ($result) {
-    echo json_encode(["status" => "success", "message" => "Kayit basarili."]);
+    echo json_encode([
+        "status" => "activation_required",
+        "message" => "Kayit basarili. OTP kodu ile hesabinizi aktif edin.",
+        "token" => $userToken
+    ]);
 } else {
     echo json_encode(["status" => "error", "message" => "Kayit olusturulamadi."]);
 }

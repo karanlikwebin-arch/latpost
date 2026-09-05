@@ -24,7 +24,7 @@ $stmt = $db->prepare("
         u.UserAvatar
     FROM Post p
     JOIN User u ON p.UserId = u.id
-    WHERE p.id = ? AND p.Postdeleted = 0 AND u.UserDeleted = 0
+    WHERE p.id = ? AND p.Postdeleted = 0 AND u.UserDeleted = 0 AND u.UserActive = 1
 ");
 $stmt->execute([$postId]);
 $post = $stmt->fetch(PDO::FETCH_ASSOC);

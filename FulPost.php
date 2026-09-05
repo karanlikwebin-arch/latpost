@@ -23,7 +23,7 @@ $stmt = $db->prepare("
         u.UserAvatar
     FROM Post p
     JOIN User u ON p.UserId = u.id
-    WHERE p.Postdeleted = 0 AND u.UserDeleted = 0
+    WHERE p.Postdeleted = 0 AND u.UserDeleted = 0 AND u.UserActive = 1
     ORDER BY p.id DESC
     LIMIT :limit OFFSET :offset
 ");
